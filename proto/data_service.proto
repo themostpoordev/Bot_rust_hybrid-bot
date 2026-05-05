@@ -1,0 +1,62 @@
+syntax = "proto3";
+
+package data_service;
+
+service DataService {
+  rpc GetHistory (GetHistoryRequest) returns (GetHistoryResponse);
+  rpc UpdateHistory (UpdateHistoryRequest) returns (UpdateHistoryResponse);
+  rpc DeleteHistory (DeleteHistoryRequest) returns (DeleteHistoryResponse);
+  rpc GetGossip (GetGossipRequest) returns (GetGossipResponse);
+  rpc UpdateGossip (UpdateGossipRequest) returns (UpdateGossipResponse);
+  rpc GetUserStat (GetUserStatRequest) returns (GetUserStatResponse);
+  rpc UpdateUserStat (UpdateUserStatRequest) returns (UpdateUserStatResponse);
+  rpc GetEconomy (GetEconomyRequest) returns (GetEconomyResponse);
+  rpc UpsertEconomy (UpsertEconomyRequest) returns (UpsertEconomyResponse);
+  rpc GetRpg (GetRpgRequest) returns (GetRpgResponse);
+  rpc UpsertRpg (UpsertRpgRequest) returns (UpsertRpgResponse);
+  rpc GetConfig (GetConfigRequest) returns (GetConfigResponse);
+  rpc SetConfig (SetConfigRequest) returns (SetConfigResponse);
+  rpc FindAll (FindAllRequest) returns (FindAllResponse);
+}
+
+message GetHistoryRequest { string user_id = 1; }
+message GetHistoryResponse { string history_json = 1; }
+
+message UpdateHistoryRequest { string user_id = 1; string history_json = 2; }
+message UpdateHistoryResponse { bool success = 1; }
+
+message DeleteHistoryRequest { string user_id = 1; }
+message DeleteHistoryResponse { bool success = 1; }
+
+message GetGossipRequest { string user_id = 1; }
+message GetGossipResponse { string summary = 1; string username = 2; }
+
+message UpdateGossipRequest { string user_id = 1; string username = 2; string summary = 3; }
+message UpdateGossipResponse { bool success = 1; }
+
+message GetUserStatRequest { string user_id = 1; }
+message GetUserStatResponse { string data_json = 1; }
+
+message UpdateUserStatRequest { string user_id = 1; string username = 2; int32 message_count_inc = 3; int32 rude_score_inc = 4; int32 lewd_score_inc = 5; }
+message UpdateUserStatResponse { bool success = 1; }
+
+message GetEconomyRequest { string user_id = 1; }
+message GetEconomyResponse { string data_json = 1; }
+
+message UpsertEconomyRequest { string user_id = 1; string username = 2; string data_json = 3; }
+message UpsertEconomyResponse { bool success = 1; }
+
+message GetRpgRequest { string user_id = 1; }
+message GetRpgResponse { string data_json = 1; }
+
+message UpsertRpgRequest { string user_id = 1; string username = 2; string class = 3; string data_json = 4; }
+message UpsertRpgResponse { bool success = 1; }
+
+message GetConfigRequest { string key = 1; }
+message GetConfigResponse { string value = 1; }
+
+message SetConfigRequest { string key = 1; string value = 2; }
+message SetConfigResponse { bool success = 1; }
+
+message FindAllRequest { string collection = 1; }
+message FindAllResponse { repeated string items_json = 1; }

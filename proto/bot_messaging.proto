@@ -1,0 +1,68 @@
+syntax = "proto3";
+
+package bot_messaging;
+
+service BotMessaging {
+  rpc Chat (ChatRequest) returns (ChatResponse);
+  rpc Analyze (AnalyzeRequest) returns (AnalyzeResponse);
+  rpc SummarizeGossip (SummarizeGossipRequest) returns (SummarizeGossipResponse);
+  // Proxy methods to db-manager
+  rpc GetHistory (GetHistoryRequest) returns (GetHistoryResponse);
+  rpc UpdateHistory (UpdateHistoryRequest) returns (UpdateHistoryResponse);
+  rpc GetEconomy (GetEconomyRequest) returns (GetEconomyResponse);
+  rpc UpsertEconomy (UpsertEconomyRequest) returns (UpsertEconomyResponse);
+  rpc GetRpg (GetRpgRequest) returns (GetRpgResponse);
+  rpc UpsertRpg (UpsertRpgRequest) returns (UpsertRpgResponse);
+  rpc FindAll (FindAllRequest) returns (FindAllResponse);
+  rpc UpdateUserStat (UpdateUserStatRequest) returns (UpdateUserStatResponse);
+}
+
+message ChatRequest {
+  string user_msg = 1;
+  string history_json = 2;
+  string system_prompt = 3;
+  string user_key = 4;
+}
+message ChatResponse { string reply = 1; string updated_history_json = 2; }
+
+message AnalyzeRequest { string text = 1; }
+message AnalyzeResponse { int32 rude = 1; int32 lewd = 2; }
+
+message SummarizeGossipRequest {
+  string old_summary = 1;
+  string new_msg = 2;
+  string user_id = 3;
+  string username = 4;
+}
+message SummarizeGossipResponse { string summary = 1; }
+
+// These mirror db-manager messages for proxying
+message GetHistoryRequest { string user_id = 1; }
+message GetHistoryResponse { string history_json = 1; }
+
+message UpdateHistoryRequest { string user_id = 1; string history_json = 2; }
+message UpdateHistoryResponse { bool success = 1; }
+
+message GetEconomyRequest { string user_id = 1; }
+message GetEconomyResponse { string data_json = 1; }
+
+message UpsertEconomyRequest { string user_id = 1; string username = 2; string data_json = 3; }
+message UpsertEconomyResponse { bool success = 1; }
+
+message GetRpgRequest { string user_id = 1; }
+message GetRpgResponse { string data_json = 1; }
+
+message UpsertRpgRequest { string user_id = 1; string username = 2; string class = 3; string data_json = 4; }
+message UpsertRpgResponse { bool success = 1; }
+
+message FindAllRequest { string collection = 1; }
+message FindAllResponse { repeated string items_json = 1; }
+
+message UpdateUserStatRequest {
+  string user_id = 1;
+  string username = 2;
+  int32 message_count_inc = 3;
+  int32 rude_score_inc = 4;
+  int32 lewd_score_inc = 5;
+}
+message UpdateUserStatResponse { bool success = 1; }

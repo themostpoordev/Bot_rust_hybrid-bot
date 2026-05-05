@@ -1,0 +1,15 @@
+# Binaries & build artifacts
+/target/
+
+# Environment files (all .env in any directory)
+**/.env
+
+# Backup of the old monolith
+/backup_monolith/
+
+# Aider AI assistant files
+.aider*
+
+# OS files
+.DS_Store
+Thumbs.db
