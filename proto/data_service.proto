@@ -17,6 +17,11 @@ service DataService {
   rpc GetConfig (GetConfigRequest) returns (GetConfigResponse);
   rpc SetConfig (SetConfigRequest) returns (SetConfigResponse);
   rpc FindAll (FindAllRequest) returns (FindAllResponse);
+  // Web command queue
+  rpc InsertWebCommand (InsertWebCommandRequest) returns (InsertWebCommandResponse);
+  rpc GetPendingWebCommands (GetPendingWebCommandsRequest) returns (GetPendingWebCommandsResponse);
+  rpc UpdateWebCommandStatus (UpdateWebCommandStatusRequest) returns (UpdateWebCommandStatusResponse);
+  rpc DeleteWebCommand (DeleteWebCommandRequest) returns (DeleteWebCommandResponse);
 }
 
 message GetHistoryRequest { string user_id = 1; }
@@ -60,3 +65,25 @@ message SetConfigResponse { bool success = 1; }
 
 message FindAllRequest { string collection = 1; }
 message FindAllResponse { repeated string items_json = 1; }
+
+// Web command queue messages
+message InsertWebCommandRequest {
+  string command_id = 1;
+  string command_type = 2;
+  string payload_json = 3;
+  string status = 4;
+  int64 created_at = 5;
+}
+message InsertWebCommandResponse { bool success = 1; }
+
+message GetPendingWebCommandsRequest {}
+message GetPendingWebCommandsResponse { repeated string items_json = 1; }
+
+message UpdateWebCommandStatusRequest {
+  string command_id = 1;
+  string status = 2;
+}
+message UpdateWebCommandStatusResponse { bool success = 1; }
+
+message DeleteWebCommandRequest { string command_id = 1; }
+message DeleteWebCommandResponse { bool success = 1; }

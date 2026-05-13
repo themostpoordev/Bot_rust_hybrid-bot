@@ -322,6 +322,107 @@ impl BotMessaging for AiService {
             .map_err(|e| Status::internal(format!("db-manager error: {}", e)))?;
         Ok(Response::new(UpdateUserStatResponse { success: true }))
     }
+
+    async fn narrate(
+        &self,
+        request: Request<NarrateRequest>,
+    ) -> Result<Response<NarrateResponse>, Status> {
+        let req = request.into_inner();
+        let body = serde_json::json!({
+            "model": "llama-3.3-70b-versatile",
+            "messages": [{"role": "system", "content": req.system_prompt}],
+            "temperature": 0.85
+        });
+        let text = match self.http
+            .post("https://api.groq.com/openai/v1/chat/completions")
+            .bearer_auth(&self.groq_key)
+            .json(&body)
+            .send()
+            .await
+        {
+            Ok(r) => match r.json::<serde_json::Value>().await {
+                Ok(v) => v["choices"][0]["message"]["content"].as_str().unwrap_or("...").to_string(),
+                Err(_) => "...".to_string(),
+            },
+            Err(_) => "...".to_string(),
+        };
+        Ok(Response::new(NarrateResponse { text }))
+    }
+
+    async fn get_config(
+        &self,
+        request: Request<GetConfigRequest>,
+    ) -> Result<Response<GetConfigResponse>, Status> {
+        let req = request.into_inner();
+        let resp = self.db.clone().get_config(data_service::GetConfigRequest { key: req.key }).await
+            .map_err(|e| Status::internal(format!("db-manager error: {}", e)))?;
+        let inner = resp.into_inner();
+        Ok(Response::new(GetConfigResponse { value: inner.value }))
+    }
+
+    async fn set_config(
+        &self,
+        request: Request<SetConfigRequest>,
+    ) -> Result<Response<SetConfigResponse>, Status> {
+        let req = request.into_inner();
+        self.db.clone().set_config(data_service::SetConfigRequest {
+            key: req.key,
+            value: req.value,
+        }).await
+            .map_err(|e| Status::internal(format!("db-manager error: {}", e)))?;
+        Ok(Response::new(SetConfigResponse { success: true }))
+    }
+
+    async fn insert_web_command(
+        &self,
+        request: Request<InsertWebCommandRequest>,
+    ) -> Result<Response<InsertWebCommandResponse>, Status> {
+        let req = request.into_inner();
+        self.db.clone().insert_web_command(data_service::InsertWebCommandRequest {
+            command_id: req.command_id,
+            command_type: req.command_type,
+            payload_json: req.payload_json,
+            status: req.status,
+            created_at: req.created_at,
+        }).await
+            .map_err(|e| Status::internal(format!("db-manager error: {}", e)))?;
+        Ok(Response::new(InsertWebCommandResponse { success: true }))
+    }
+
+    async fn get_pending_web_commands(
+        &self,
+        _request: Request<GetPendingWebCommandsRequest>,
+    ) -> Result<Response<GetPendingWebCommandsResponse>, Status> {
+        let resp = self.db.clone().get_pending_web_commands(data_service::GetPendingWebCommandsRequest {}).await
+            .map_err(|e| Status::internal(format!("db-manager error: {}", e)))?;
+        let inner = resp.into_inner();
+        Ok(Response::new(GetPendingWebCommandsResponse { items_json: inner.items_json }))
+    }
+
+    async fn update_web_command_status(
+        &self,
+        request: Request<UpdateWebCommandStatusRequest>,
+    ) -> Result<Response<UpdateWebCommandStatusResponse>, Status> {
+        let req = request.into_inner();
+        self.db.clone().update_web_command_status(data_service::UpdateWebCommandStatusRequest {
+            command_id: req.command_id,
+            status: req.status,
+        }).await
+            .map_err(|e| Status::internal(format!("db-manager error: {}", e)))?;
+        Ok(Response::new(UpdateWebCommandStatusResponse { success: true }))
+    }
+
+    async fn delete_web_command(
+        &self,
+        request: Request<DeleteWebCommandRequest>,
+    ) -> Result<Response<DeleteWebCommandResponse>, Status> {
+        let req = request.into_inner();
+        self.db.clone().delete_web_command(data_service::DeleteWebCommandRequest {
+            command_id: req.command_id,
+        }).await
+            .map_err(|e| Status::internal(format!("db-manager error: {}", e)))?;
+        Ok(Response::new(DeleteWebCommandResponse { success: true }))
+    }
 }
 
 #[tokio::main]

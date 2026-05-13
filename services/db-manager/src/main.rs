@@ -20,6 +20,7 @@ struct DbService {
     economy_players: Collection<Bson>,
     rpg_players: Collection<Bson>,
     config: Collection<Bson>,
+    web_commands: Collection<Bson>,
 }
 
 #[tonic::async_trait]
@@ -29,7 +30,15 @@ impl data_service::data_service_server::DataService for DbService {
         let filter = doc! { "user_id": &req.user_id };
         match self.user_memories.find_one(filter, None).await {
             Ok(Some(doc)) => {
-                let history_json = doc.get("history").map(|h| h.to_string()).unwrap_or_else(|| "[]".into());
+                let history_json = if let Some(h) = doc.get("history") {
+                    if let Ok(val) = serde_json::to_value(h) {
+                        serde_json::to_string(&val).unwrap_or_else(|_| "[]".into())
+                    } else {
+                        "[]".into()
+                    }
+                } else {
+                    "[]".into()
+                };
                 Ok(Response::new(GetHistoryResponse { history_json }))
             }
             _ => Ok(Response::new(GetHistoryResponse { history_json: "[]".into() })),
@@ -81,10 +90,12 @@ impl data_service::data_service_server::DataService for DbService {
         let filter = doc! { "user_id": &req.user_id };
         match self.user_stats.find_one(filter, None).await {
             Ok(Some(doc)) => {
-                let data_json = mongodb::bson::to_document(&doc).map(|d| d.to_string()).unwrap_or_default();
+                let mut doc_bson = mongodb::bson::to_document(&doc).map_err(|e| Status::internal(e.to_string()))?;
+                doc_bson.remove("_id");
+                let data_json = serde_json::to_value(&doc_bson).ok().and_then(|v| serde_json::to_string(&v).ok()).unwrap_or_else(|| "{}".into());
                 Ok(Response::new(GetUserStatResponse { data_json }))
             }
-            _ => Ok(Response::new(GetUserStatResponse { data_json: "".into() })),
+            _ => Ok(Response::new(GetUserStatResponse { data_json: "{}".into() })),
         }
     }
 
@@ -109,18 +120,28 @@ impl data_service::data_service_server::DataService for DbService {
         let filter = doc! { "user_id": &req.user_id };
         match self.economy_players.find_one(filter, None).await {
             Ok(Some(doc)) => {
-                let data_json = mongodb::bson::to_document(&doc).map(|d| d.to_string()).unwrap_or_default();
+                let mut doc_bson = mongodb::bson::to_document(&doc).map_err(|e| Status::internal(e.to_string()))?;
+                doc_bson.remove("_id");
+                let data_json = serde_json::to_value(&doc_bson).ok().and_then(|v| serde_json::to_string(&v).ok()).unwrap_or_else(|| "{}".into());
                 Ok(Response::new(GetEconomyResponse { data_json }))
             }
-            _ => Ok(Response::new(GetEconomyResponse { data_json: "".into() })),
+            _ => Ok(Response::new(GetEconomyResponse { data_json: "{}".into() })),
         }
     }
 
     async fn upsert_economy(&self, request: Request<UpsertEconomyRequest>) -> Result<Response<UpsertEconomyResponse>, Status> {
         let req = request.into_inner();
-        let data: Bson = serde_json::from_str(&req.data_json).map(|v: Value| to_bson(&v).unwrap_or(Bson::Null)).unwrap_or(Bson::Null);
         let filter = doc! { "user_id": &req.user_id };
-        let update = doc! { "$set": data };
+        let mut set_doc = doc! { "username": &req.username };
+        if let Ok(value) = serde_json::from_str::<serde_json::Value>(&req.data_json) {
+            if let Ok(bson_val) = to_bson(&value) {
+                if let Bson::Document(mut d) = bson_val {
+                    d.insert("username", Bson::String(req.username.clone()));
+                    set_doc = d;
+                }
+            }
+        }
+        let update = doc! { "$set": set_doc };
         let opts = UpdateOptions::builder().upsert(true).build();
         self.economy_players.update_one(filter, update, opts).await.map_err(|e| Status::internal(e.to_string()))?;
         Ok(Response::new(UpsertEconomyResponse { success: true }))
@@ -131,18 +152,28 @@ impl data_service::data_service_server::DataService for DbService {
         let filter = doc! { "user_id": &req.user_id };
         match self.rpg_players.find_one(filter, None).await {
             Ok(Some(doc)) => {
-                let data_json = mongodb::bson::to_document(&doc).map(|d| d.to_string()).unwrap_or_default();
+                let mut doc_bson = mongodb::bson::to_document(&doc).map_err(|e| Status::internal(e.to_string()))?;
+                doc_bson.remove("_id");
+                let data_json = serde_json::to_value(&doc_bson).ok().and_then(|v| serde_json::to_string(&v).ok()).unwrap_or_else(|| "{}".into());
                 Ok(Response::new(GetRpgResponse { data_json }))
             }
-            _ => Ok(Response::new(GetRpgResponse { data_json: "".into() })),
+            _ => Ok(Response::new(GetRpgResponse { data_json: "{}".into() })),
         }
     }
 
     async fn upsert_rpg(&self, request: Request<UpsertRpgRequest>) -> Result<Response<UpsertRpgResponse>, Status> {
         let req = request.into_inner();
-        let data: Bson = serde_json::from_str(&req.data_json).map(|v: Value| to_bson(&v).unwrap_or(Bson::Null)).unwrap_or(Bson::Null);
         let filter = doc! { "user_id": &req.user_id };
-        let update = doc! { "$set": data };
+        let mut set_doc = doc! { "username": &req.username };
+        if let Ok(value) = serde_json::from_str::<serde_json::Value>(&req.data_json) {
+            if let Ok(bson_val) = to_bson(&value) {
+                if let Bson::Document(mut d) = bson_val {
+                    d.insert("username", Bson::String(req.username.clone()));
+                    set_doc = d;
+                }
+            }
+        }
+        let update = doc! { "$set": set_doc };
         let opts = UpdateOptions::builder().upsert(true).build();
         self.rpg_players.update_one(filter, update, opts).await.map_err(|e| Status::internal(e.to_string()))?;
         Ok(Response::new(UpsertRpgResponse { success: true }))
@@ -169,6 +200,52 @@ impl data_service::data_service_server::DataService for DbService {
         Ok(Response::new(SetConfigResponse { success: true }))
     }
 
+    async fn insert_web_command(&self, request: Request<InsertWebCommandRequest>) -> Result<Response<InsertWebCommandResponse>, Status> {
+        let req = request.into_inner();
+        let doc = doc! {
+            "command_id": &req.command_id,
+            "command_type": &req.command_type,
+            "payload_json": &req.payload_json,
+            "status": &req.status,
+            "created_at": req.created_at as i64,
+        };
+        let bson_doc = to_bson(&doc).map_err(|e| Status::internal(e.to_string()))?;
+        self.web_commands.insert_one(bson_doc, None).await.map_err(|e| Status::internal(e.to_string()))?;
+        Ok(Response::new(InsertWebCommandResponse { success: true }))
+    }
+
+    async fn get_pending_web_commands(&self, _request: Request<GetPendingWebCommandsRequest>) -> Result<Response<GetPendingWebCommandsResponse>, Status> {
+        let filter = doc! { "status": "pending" };
+        let sort = doc! { "created_at": 1 };
+        let find_options = mongodb::options::FindOptions::builder().sort(sort).build();
+        let mut cursor = self.web_commands.find(filter, find_options).await.map_err(|e| Status::internal(e.to_string()))?;
+        let mut items = vec![];
+        while let Some(doc) = cursor.try_next().await.map_err(|e| Status::internal(e.to_string()))? {
+            if let Ok(mut d) = mongodb::bson::to_document(&doc) {
+                d.remove("_id");
+                if let Ok(json_val) = serde_json::to_value(&d) {
+                    items.push(json_val.to_string());
+                }
+            }
+        }
+        Ok(Response::new(GetPendingWebCommandsResponse { items_json: items }))
+    }
+
+    async fn update_web_command_status(&self, request: Request<UpdateWebCommandStatusRequest>) -> Result<Response<UpdateWebCommandStatusResponse>, Status> {
+        let req = request.into_inner();
+        let filter = doc! { "command_id": &req.command_id };
+        let update = doc! { "$set": { "status": &req.status } };
+        self.web_commands.update_one(filter, update, None).await.map_err(|e| Status::internal(e.to_string()))?;
+        Ok(Response::new(UpdateWebCommandStatusResponse { success: true }))
+    }
+
+    async fn delete_web_command(&self, request: Request<DeleteWebCommandRequest>) -> Result<Response<DeleteWebCommandResponse>, Status> {
+        let req = request.into_inner();
+        let filter = doc! { "command_id": &req.command_id };
+        self.web_commands.delete_one(filter, None).await.map_err(|e| Status::internal(e.to_string()))?;
+        Ok(Response::new(DeleteWebCommandResponse { success: true }))
+    }
+
     async fn find_all(&self, request: Request<FindAllRequest>) -> Result<Response<FindAllResponse>, Status> {
         let req = request.into_inner();
         let collection: &Collection<Bson> = match req.collection.as_str() {
@@ -180,8 +257,11 @@ impl data_service::data_service_server::DataService for DbService {
         let mut cursor = collection.find(None, None).await.map_err(|e| Status::internal(e.to_string()))?;
         let mut items = vec![];
         while let Some(doc) = cursor.try_next().await.map_err(|e| Status::internal(e.to_string()))? {
-            if let Ok(d) = mongodb::bson::to_document(&doc) {
-                items.push(d.to_string());
+            if let Ok(mut d) = mongodb::bson::to_document(&doc) {
+                d.remove("_id");
+                if let Ok(json_val) = serde_json::to_value(&d) {
+                    items.push(json_val.to_string());
+                }
             }
         }
         Ok(Response::new(FindAllResponse { items_json: items }))
@@ -203,6 +283,7 @@ async fn main() -> anyhow::Result<()> {
         economy_players: client.database("tah_economy").collection("economy_players"),
         rpg_players: client.database("tah_rpg").collection("rpg_players"),
         config: client.database("tah_config").collection("config"),
+        web_commands: client.database("tah_config").collection("web_commands"),
     };
 
     println!("..db-manager listening on {}", addr);

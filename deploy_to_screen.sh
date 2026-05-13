@@ -16,54 +16,47 @@ echo "========================================="
 echo "  Deploying to screen session: $SESSION"
 echo "========================================="
 
-# Check if screen session exists
+# Create screen session if it doesn't exist
 if ! screen -S "$SESSION" -Q select . > /dev/null 2>&1; then
-    echo "Error: screen session '$SESSION' not found."
-    echo "Create it first with: screen -S $SESSION"
-    exit 1
+    echo "Creating new screen session: $SESSION"
+    screen -dmS "$SESSION"
+    sleep 1
 fi
 
 # Kill any existing service windows (keep window 0 which is bash)
-for win in db-manager ai-core gateway-discord gateway-line; do
-    # Try to kill by title (if exists)
+for win in db-manager ai-core gateway-discord web-dashboard; do
     screen -S "$SESSION" -p "$win" -X kill 2>/dev/null || true
 done
 sleep 1
 
-# The key insight: `screen -S SESSION -X screen -t title command`
-# runs `command` as the shell for that window.
-# BUT: we need to cd to BINARY_DIR first.
-# Better: use a small inline script per window.
+# Each service runs from its own directory so .env is picked up
 
 # Window 1: db-manager
 echo "[1/4] Starting db-manager..."
-screen -S "$SESSION" -X screen -t db-manager bash -c "cd $BINARY_DIR && exec ./db-manager"
-echo "  -> Waiting 3s for db-manager to start..."
+screen -S "$SESSION" -X screen -t db-manager bash -c "cd $PROJECT_ROOT/services/db-manager && exec $BINARY_DIR/db-manager"
+echo "  -> Waiting 3s..."
 sleep 3
 
 # Window 2: ai-core
 echo "[2/4] Starting ai-core..."
-screen -S "$SESSION" -X screen -t ai-core bash -c "cd $BINARY_DIR && exec ./ai-core"
-echo "  -> Waiting 3s for ai-core to start..."
+screen -S "$SESSION" -X screen -t ai-core bash -c "cd $PROJECT_ROOT/services/ai-core && exec $BINARY_DIR/ai-core"
+echo "  -> Waiting 3s..."
 sleep 3
 
 # Window 3: gateway-discord
 echo "[3/4] Starting gateway-discord..."
-screen -S "$SESSION" -X screen -t gateway-discord bash -c "cd $BINARY_DIR && exec ./gateway-discord"
+screen -S "$SESSION" -X screen -t gateway-discord bash -c "cd $PROJECT_ROOT/services/gateway-discord && exec $BINARY_DIR/gateway-discord"
+sleep 2
 
-# Window 4: gateway-line
-echo "[4/4] Starting gateway-line..."
-screen -S "$SESSION" -X screen -t gateway-line bash -c "cd $BINARY_DIR && exec ./gateway-line"
+# Window 4: web-dashboard
+echo "[4/4] Starting web-dashboard..."
+screen -S "$SESSION" -X screen -t web-dashboard bash -c "cd $PROJECT_ROOT/services/web-dashboard && exec $BINARY_DIR/web-dashboard"
+sleep 2
 
 echo ""
 echo "========================================="
 echo "  All services deployed!"
 echo "========================================="
-echo ""
-echo "How to use:"
-echo "  - Attach to session:  screen -r $SESSION"
-echo "  - Switch windows:     Ctrl+A, then 0-9"
-echo "  - Detach:            Ctrl+A, then d"
 echo ""
 echo "Current windows:"
 screen -S "$SESSION" -Q windows 2>&1 || true

@@ -13,3 +13,7 @@
 # OS files
 .DS_Store
 Thumbs.db
+
+litellm.log
+cloudflared.deb
+.claude

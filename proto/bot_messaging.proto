@@ -6,6 +6,7 @@ service BotMessaging {
   rpc Chat (ChatRequest) returns (ChatResponse);
   rpc Analyze (AnalyzeRequest) returns (AnalyzeResponse);
   rpc SummarizeGossip (SummarizeGossipRequest) returns (SummarizeGossipResponse);
+  rpc Narrate (NarrateRequest) returns (NarrateResponse);
   // Proxy methods to db-manager
   rpc GetHistory (GetHistoryRequest) returns (GetHistoryResponse);
   rpc UpdateHistory (UpdateHistoryRequest) returns (UpdateHistoryResponse);
@@ -15,6 +16,13 @@ service BotMessaging {
   rpc UpsertRpg (UpsertRpgRequest) returns (UpsertRpgResponse);
   rpc FindAll (FindAllRequest) returns (FindAllResponse);
   rpc UpdateUserStat (UpdateUserStatRequest) returns (UpdateUserStatResponse);
+  rpc GetConfig (GetConfigRequest) returns (GetConfigResponse);
+  rpc SetConfig (SetConfigRequest) returns (SetConfigResponse);
+  // Web command queue proxy methods
+  rpc InsertWebCommand (InsertWebCommandRequest) returns (InsertWebCommandResponse);
+  rpc GetPendingWebCommands (GetPendingWebCommandsRequest) returns (GetPendingWebCommandsResponse);
+  rpc UpdateWebCommandStatus (UpdateWebCommandStatusRequest) returns (UpdateWebCommandStatusResponse);
+  rpc DeleteWebCommand (DeleteWebCommandRequest) returns (DeleteWebCommandResponse);
 }
 
 message ChatRequest {
@@ -27,6 +35,11 @@ message ChatResponse { string reply = 1; string updated_history_json = 2; }
 
 message AnalyzeRequest { string text = 1; }
 message AnalyzeResponse { int32 rude = 1; int32 lewd = 2; }
+
+message NarrateRequest {
+  string system_prompt = 1;
+}
+message NarrateResponse { string text = 1; }
 
 message SummarizeGossipRequest {
   string old_summary = 1;
@@ -66,3 +79,30 @@ message UpdateUserStatRequest {
   int32 lewd_score_inc = 5;
 }
 message UpdateUserStatResponse { bool success = 1; }
+
+message GetConfigRequest { string key = 1; }
+message GetConfigResponse { string value = 1; }
+
+message SetConfigRequest { string key = 1; string value = 2; }
+message SetConfigResponse { bool success = 1; }
+
+message InsertWebCommandRequest {
+  string command_id = 1;
+  string command_type = 2;
+  string payload_json = 3;
+  string status = 4;
+  int64 created_at = 5;
+}
+message InsertWebCommandResponse { bool success = 1; }
+
+message GetPendingWebCommandsRequest {}
+message GetPendingWebCommandsResponse { repeated string items_json = 1; }
+
+message UpdateWebCommandStatusRequest {
+  string command_id = 1;
+  string status = 2;
+}
+message UpdateWebCommandStatusResponse { bool success = 1; }
+
+message DeleteWebCommandRequest { string command_id = 1; }
+message DeleteWebCommandResponse { bool success = 1; }
