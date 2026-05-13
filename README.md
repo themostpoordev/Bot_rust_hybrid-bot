@@ -1,262 +1,525 @@
-# 🤖 MyBot - Production-Grade Microservices Workspace
+# 🤖 TAHBOT — Hybrid Bot Architecture with gRPC Microservices
 
-A high-performance Discord + LINE bot system refactored into a Rust microservices architecture with gRPC inter-service communication.
+> A production-grade, multi-platform bot system built on a Rust microservices architecture with gRPC inter-service communication, MongoDB persistence, and Groq AI integration.
 
-## 🏗️ Architecture
+![Rust](https://img.shields.io/badge/Rust-1.75+-orange?logo=rust)
+![gRPC](https://img.shields.io/badge/gRPC-Tonic%200.11-blue)
+![MongoDB](https://img.shields.io/badge/MongoDB-2.8+-green?logo=mongodb)
+![Groq](https://img.shields.io/badge/AI-Groq%20Llama%203.3-purple)
+![License](https://img.shields.io/badge/License-MIT-white)
+
+---
+
+## 📐 Architecture Overview
+
+TAHBOT follows a **layered microservices architecture** where each service has a single, well-defined responsibility. Services communicate exclusively through **gRPC** using Protocol Buffers, enabling language-agnostic extensibility, type-safe contracts, and clean separation of concerns.
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                        Discord / LINE                         │
-│  (Users interact via Discord servers & LINE messaging)     │
-└──────────────────────┬──────────────────────────────────┘
-                           │
-              ┌────────────┴────────────┐
-              │                       │
-    ┌─────────▼─────────┐    ┌───▼──────────────┐
-    │  gateway-discord  │    │  gateway-line    │
-    │  (Discord API)   │    │  (LINE Webhook)  │
-    └─────────┬─────────┘    └───┬──────────────┘
-              │                       │
-              └────────────┬────────────┘
-                           │ gRPC (bot_messaging.proto)
-              ┌────────────▼────────────┐
-              │      ai-core (port 50052)   │
-              │  - Groq API integration     │
-              │  - Chat/Analyze/Summarize  │
-              └────────────┬────────────┘
-                           │ gRPC (data_service.proto)
-              ┌────────────▼────────────┐
-              │   db-manager (port 50051)  │
-              │  - MongoDB operations        │
-              │  - User history, stats, etc. │
-              └────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────┐
+│                        EXTERNAL PLATFORMS                            │
+│              Discord (9 Bot Instances)  ·  LINE (Webhook)           │
+└──────────────┬───────────────────────────────────┬───────────────────┘
+               │                                   │
+    ┌──────────▼──────────┐             ┌──────────▼──────────┐
+    │   gateway-discord   │             │    gateway-line     │
+    │  (Serenity + Axum)  │             │   (Axum Webhook)    │
+    │  Port: N/A (WS)     │             │   Port: 8080        │
+    └──────────┬──────────┘             └──────────┬──────────┘
+               │                                   │
+               │         bot_messaging.proto        │
+               │        (BotMessaging service)      │
+               └──────────────┬────────────────────┘
+                              │
+                 ┌────────────▼────────────┐
+                 │        ai-core          │
+                 │     Port: 50052         │
+                 │  ┌────────────────────┐ │
+                 │  │  Groq API Client   │ │
+                 │  │  Chat / Analyze    │ │
+                 │  │  Summarize / Narrate│ │
+                 │  └────────────────────┘ │
+                 │  ┌────────────────────┐ │
+                 │  │  DB Proxy Layer    │ │
+                 │  │  (forwards gRPC    │ │
+                 │  │   to db-manager)   │ │
+                 │  └────────────────────┘ │
+                 └────────────┬────────────┘
+                              │
+                 │  data_service.proto     │
+                 │  (DataService service)  │
+                              │
+                 ┌────────────▼────────────┐
+                 │      db-manager         │
+                 │     Port: 50051         │
+                 │  ┌────────────────────┐ │
+                 │  │  MongoDB Driver    │ │
+                 │  │  7 Collections     │ │
+                 │  │  4 Databases       │ │
+                 │  └────────────────────┘ │
+                 └────────────┬────────────┘
+                              │
+                 ┌────────────▼────────────┐
+                 │       MongoDB           │
+                 │  ┌───────────────────┐  │
+                 │  │ tee_bot_db        │  │
+                 │  │ poordev_db        │  │
+                 │  │ tah_economy       │  │
+                 │  │ tah_rpg           │  │
+                 │  │ tah_config        │  │
+                 │  └───────────────────┘  │
+                 └─────────────────────────┘
+
+    ┌─────────────────────────────────────────┐
+    │           web-dashboard (Port 8081)      │
+    │  ┌─────────────┐  ┌──────────────────┐  │
+    │  │  Public      │  │  Admin Panel     │  │
+    │  │  Dashboard   │  │  /cmd, /api/*    │  │
+    │  │  (Axum)      │  │  (gRPC proxy)    │  │
+    │  └─────────────┘  └──────────────────┘  │
+    └─────────────────────────────────────────┘
 ```
 
-## 📁 Directory Structure
+### Data Flow
+
+```
+User Message (Discord/LINE)
+  → Gateway (parses platform events, no business logic)
+    → ai-core via gRPC (Chat / Analyze / SummarizeGossip)
+      → Groq API (Llama 3.3 70B / Llama 3.1 8B)
+      → db-manager via gRPC (persist history, stats, economy, rpg)
+        → MongoDB (upsert operations)
+  ← Reply flows back through the same chain
+```
+
+---
+
+## 📁 Project Structure
 
 ```
 mybot/
-├── Cargo.toml              # Workspace definition
-├── README.md
-├── deploy_to_screen.sh     # Deploy script for screen session
-├── .gitignore
-├── proto/
-│   ├── bot_messaging.proto  # gRPC: Gateways <-> AI-Core
-│   └── data_service.proto   # gRPC: AI-Core <-> DB-Manager
+├── Cargo.toml                          # Workspace root — 4 service crates
+├── Cargo.lock                          # Locked dependency tree
+├── .gitignore                          # Ignores .env, target/, backups
+├── README.md                           # This file
+├── deploy_to_screen.sh                 # Production deployment script
+│
+├── proto/                              # Protocol Buffer definitions
+│   ├── bot_messaging.proto             # Gateway ↔ AI-Core service contract
+│   └── data_service.proto              # AI-Core ↔ DB-Manager service contract
+│
 ├── services/
-│   ├── db-manager/          # Port 50051 — All MongoDB logic
-│   ├── ai-core/            # Port 50052 — All Groq API logic
-│   ├── gateway-discord/     # Discord bot handlers
-│   └── gateway-line/       # LINE bot webhook
-└── target/                 # Build artifacts (gitignored)
+│   ├── db-manager/                     # Port 50051 — MongoDB data layer
+│   │   ├── Cargo.toml
+│   │   ├── build.rs                    # tonic-build codegen
+│   │   ├── .env                        # MONGODB_URI, DB_MANAGER_ADDR
+│   │   └── src/main.rs                 # DataService gRPC server (200+ RPCs)
+│   │
+│   ├── ai-core/                        # Port 50052 — AI engine + DB proxy
+│   │   ├── Cargo.toml
+│   │   ├── build.rs                    # tonic-build codegen (both protos)
+│   │   ├── .env                        # GROQ_API_KEY, DATA_SERVICE_ADDR
+│   │   └── src/main.rs                 # BotMessaging server + proxy layer
+│   │
+│   ├── gateway-discord/                # Discord gateway (9 bot instances)
+│   │   ├── Cargo.toml
+│   │   ├── build.rs                    # tonic-build codegen
+│   │   ├── .env                        # 9x DISCORD_BOT_TOKEN_*, BOT_MESSAGING_ADDR
+│   │   └── src/main.rs                 # 7 EventHandlers, web command processor
+│   │
+│   └── web-dashboard/                  # Port 8081 — Axum web server
+│       ├── Cargo.toml
+│       ├── build.rs                    # tonic-build codegen
+│       ├── .env                        # BOT_MESSAGING_ADDR, ADMIN_PASS
+│       └── src/
+│           ├── main.rs                 # Router + health check + app state
+│           ├── dashboard.rs            # Public leaderboard (HTML/CSS/JS)
+│           └── admin.rs                # Admin panel (CRUD, broadcast, events)
+│
+├── backup_monolith/                    # Archived pre-refactor workspace
+└── target/                             # Build artifacts (gitignored)
 ```
 
-## 🚀 Services
+---
 
-### `db-manager` (Port 50051)
-All MongoDB operations. Handles:
-- User chat history (read/write/delete)
-- User gossip summaries
-- User statistics (message count, rude/lewd scores)
-- Economy system (wallet, earnings)
-- RPG system (player classes, stats)
-- Config storage
+## 🔌 gRPC Service Contracts
 
-### `ai-core` (Port 50052)
-All AI/Groq logic. Handles:
-- `Chat` — Generate AI replies with history context
-- `Analyze` — Analyze text for rudeness/lewdness (0-10 scale)
-- `SummarizeGossip` — Update user personality summaries
-- Proxies DB operations to `db-manager`
+### `bot_messaging.proto` — Gateway ↔ AI-Core
 
-### `gateway-discord`
-Discord bot handlers (no AI logic, no DB logic):
-- **ต๊ะ** — Teenager with a sharp tongue (Tah)
-- **อาวัง** — Horny older man (Wang)
-- **เจ๊มุ่ง** — Horny woman (Mung)
-- **เสี่ยหนู** — Rich politician (Nutin)
-- **โยฮัน** — Dark boss (Johan)
-- **ผู้คุมกฎ** — Judge (stat tracking)
-- **สารวัตรแจ๊ะ** — Inspector (economy/RPG + slash commands)
-- **WelcomeBot** — The Coolest Welcome Experience in the World (4-message cinematic)
+| RPC | Purpose |
+|-----|---------|
+| `Chat` | Generate AI reply with conversation history |
+| `Analyze` | Score text for rudeness/lewdness (0–10 scale) |
+| `SummarizeGossip` | Update user personality summary |
+| `Narrate` | Generate creative narrative text |
+| `GetHistory` / `UpdateHistory` | Proxy to db-manager |
+| `GetEconomy` / `UpsertEconomy` | Proxy to db-manager |
+| `GetRpg` / `UpsertRpg` | Proxy to db-manager |
+| `FindAll` | Query entire collections |
+| `UpdateUserStat` | Increment user statistics |
+| `GetConfig` / `SetConfig` | Key-value config store |
+| `InsertWebCommand` / `GetPendingWebCommands` / `UpdateWebCommandStatus` / `DeleteWebCommand` | Web command queue |
 
-### `gateway-line`
-LINE messaging bot (webhook-based):
-- Listens on `http://0.0.0.0:8080/webhook`
-- Forwards to `ai-core` via gRPC
+### `data_service.proto` — AI-Core ↔ DB-Manager
 
-## 🛠️ Prerequisites
+| RPC | Purpose |
+|-----|---------|
+| `GetHistory` / `UpdateHistory` / `DeleteHistory` | Chat history CRUD |
+| `GetGossip` / `UpdateGossip` | User gossip summaries |
+| `GetUserStat` / `UpdateUserStat` | Message counts, rude/lewd scores |
+| `GetEconomy` / `UpsertEconomy` | Wallet, earnings, jail system |
+| `GetRpg` / `UpsertRpg` | Player classes, stats, inventory |
+| `GetConfig` / `SetConfig` | Server configuration |
+| `FindAll` | Bulk collection queries |
+| `InsertWebCommand` / `GetPendingWebCommands` / `UpdateWebCommandStatus` / `DeleteWebCommand` | Web command queue |
 
-- **Rust** (edition 2021) — `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`
-- **MongoDB** — running on `localhost:27017`
-- **Groq API Key** — get from [console.groq.com](https://console.groq.com)
-- **Discord Bot Tokens** — create at [discord.com/developers](https://discord.com/developers)
-- **LINE Channel Token** — from [developers.line.me](https://developers.line.me)
-- **screen** — `apt install screen`
+---
 
-## 🔧 Environment Variables
+## 🚀 Services Deep Dive
 
-Each service uses its own `.env` file:
+### `db-manager` — Port 50051
+
+The **single source of truth** for all persistent data. Exposes the `DataService` gRPC server with full CRUD over 7 MongoDB collections across 4 databases:
+
+| Database | Collection | Purpose |
+|----------|-----------|---------|
+| `tee_bot_db` | `user_memories` | Per-user chat history (JSON arrays) |
+| `poordev_db` | `user_stats` | Message counts, rude/lewd scores |
+| `poordev_db` | `user_gossip` | User personality summaries |
+| `tah_economy` | `economy_players` | Wallets, crime timestamps, jail status |
+| `tah_rpg` | `rpg_players` | Classes, levels, stats, inventory |
+| `tah_config` | `config` | Key-value server configuration |
+| `tah_config` | `web_commands` | Async command queue for web dashboard |
+
+All operations use **upsert semantics** (`UpdateOptions::builder().upsert(true)`) — no separate create/update paths.
+
+### `ai-core` — Port 50052
+
+The **intelligence and orchestration layer**. Two responsibilities:
+
+1. **AI Engine** — Communicates with Groq API (`api.groq.com`):
+   - `Chat` → `llama-3.3-70b-versatile` (temperature 0.85, 30-message history window)
+   - `Analyze` → `llama-3.1-8b-instant` (temperature 0, structured 0–10 scoring)
+   - `SummarizeGossip` → `llama-3.3-70b-versatile` (single-sentence summaries)
+   - `Narrate` → `llama-3.3-70b-versatile` (creative storytelling)
+
+2. **DB Proxy Layer** — Forwards gateway requests to `db-manager` via `data_service.proto`, translating between the two proto packages so gateways never need to connect to the database layer directly.
+
+### `gateway-discord` — Discord Gateway
+
+Manages **9 independent Discord bot connections** via the Serenity library, each with its own token and `EventHandler`:
+
+| Bot | Handler | Type | Description |
+|-----|---------|------|-------------|
+| **ต๊ะ** (Tah) | `AiDiscordHandler` | AI Roleplay | Teenager, sharp-tongue, rude |
+| **อาวัง** (Wang) | `AiDiscordHandler` | AI Roleplay | Flirtatious older man |
+| **เจ๊มุ่ง** (Mung) | `AiDiscordHandler` | AI Roleplay | Bold, flirtatious woman |
+| **เสี่ยหนู** (Nutin) | `AiDiscordHandler` | AI Roleplay | Wealthy politician |
+| **โยฮัน** (Johan) | `AiDiscordHandler` | AI Roleplay | Dark, mysterious boss |
+| **ผู้คุมกฎ** (Judge) | `JudgeHandler` | Analytics | Tracks rude/lewd scores, `!top` leaderboard |
+| **มอด** (Mod) | `ModHandler` | Moderation | `!ban`, `!kick`, `!clear`, anti-nuke, mute |
+| **สารวัตรแจ๊ะ** (Inspector) | `InspectorHandler` | Economy/RPG | 18 slash commands (see below) |
+| **WelcomeBot** | `WelcomeHandler` | Onboarding | Cinematic 2-message welcome embed |
+
+**Background processes:**
+- **Web Command Queue Processor** — Polls `web_commands` collection every 5 seconds, dispatches messages via Discord HTTP API, deletes after execution
+- **Leaderboard Auto-Update** — Posts and edits leaderboard embeds every 60 seconds (economy + judge stats)
+
+**Inspector Slash Commands (18):**
+
+| Command | Cooldown | Description |
+|---------|----------|-------------|
+| `/balance` | — | View wallet |
+| `/work` | 60s | Earn 100–200 ฿ |
+| `/crime` | 60s | 60% success, risk jail |
+| `/rob` | 300s | Steal from other players |
+| `/gamble` | 30s | 50/50 double-or-nothing |
+| `/give` | — | Transfer with 10% fee |
+| `/bribe` | — | Pay 500 ฿ to exit jail |
+| `/leaderboard` | — | Top 10 richest |
+| `/shop` | — | View item shop |
+| `/blackmarket` | — | View black market |
+| `/buy` | — | Purchase items |
+| `/register` | — | Create RPG character |
+| `/profile` | — | View character stats |
+| `/hunt` | 60s | Fight monsters |
+| `/duel` | — | PvP with optional bet |
+| `/dungeon` | 600s | Fight bosses |
+| `/inventory` | — | View items |
+| `/equip` | — | Equip items |
+| `/levelup` | — | Spend EXP for +5 all stats |
+
+### `web-dashboard` — Port 8081
+
+Axum-based web server with two distinct interfaces:
+
+**Public Dashboard** (`/`)
+- Real-time system status (polls `/health` every 15s)
+- Three-tab leaderboard: Stats (rude/lewd scores), Economy (wallets), RPG (levels)
+- Glassmorphism UI with Tailwind CSS, Orbitron font, animated indicators
+
+**Admin Panel** (`/admin?pass=...`)
+- **Events** — Start role-giveaway events (bot assigns roles to first N users)
+- **Economy** — Directly set player wallet balances (gRPC → MongoDB)
+- **RPG** — Directly set player class, level, EXP
+- **Broadcast** — Queue messages via web command queue
+- **Announce** — Cross-platform announcements
+- **Users** — Database status + API endpoint reference
+
+**Health Check** (`/health`)
+- Returns JSON with per-service status and latency (µs)
+- Verifies ai-core by opening a gRPC connection + test query
+
+---
+
+## 🛠️ Technology Stack
+
+| Layer | Technology | Version |
+|-------|-----------|---------|
+| Language | Rust (Edition 2021) | 1.75+ |
+| Async Runtime | Tokio | 1.0 (full features) |
+| RPC Framework | Tonic | 0.11 |
+| Serialization | Prost + Serde JSON | 0.12 / 1.0 |
+| Database | MongoDB | 2.8 driver |
+| AI API | Groq (OpenAI-compatible) | Llama 3.3 70B / 3.1 8B |
+| Discord Library | Serenity | 0.12 |
+| Web Framework | Axum | 0.7 (macros) |
+| Config | dotenvy | 0.15 |
+| Error Handling | anyhow | 1.0 |
+
+---
+
+## 📦 Prerequisites
+
+```bash
+# Rust toolchain
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+
+# MongoDB (local or remote)
+sudo apt install mongodb
+# or use MongoDB Atlas for cloud hosting
+
+# External API keys:
+# - Groq API Key: https://console.groq.com
+# - Discord Bot Tokens: https://discord.com/developers/applications
+# - LINE Channel Token: https://developers.line.me
+
+# screen (for deployment)
+sudo apt install screen
+```
+
+---
+
+## 🔧 Environment Configuration
+
+Each service reads from its own `.env` file at startup:
 
 ### `services/db-manager/.env`
 ```env
 MONGODB_URI=mongodb://localhost:27017
-DATA_SERVICE_ADDR=0.0.0.0:50051
+DB_MANAGER_ADDR=0.0.0.0:50051
 ```
 
 ### `services/ai-core/.env`
 ```env
-GROQ_API_KEY=your_groq_api_key_here
-DATA_SERVICE_ADDR=http://0.0.0.0:50051
+GROQ_API_KEY=gsk_your_key_here
+DATA_SERVICE_ADDR=http://localhost:50051
 BOT_MESSAGING_ADDR=0.0.0.0:50052
 ```
 
 ### `services/gateway-discord/.env`
 ```env
-DISCORD_BOT_TOKEN=your_token_here
-DISCORD_BOT_TOKEN_2=your_token_2_here
-DISCORD_BOT_TOKEN_3=your_token_3_here
-DISCORD_BOT_TOKEN_4=your_token_4_here
-DISCORD_BOT_TOKEN_5=your_token_5_here
-DISCORD_BOT_TOKEN_6=your_token_6_here
-DISCORD_BOT_TOKEN_7=your_token_7_here
-DISCORD_BOT_TOKEN_8=your_token_8_here
-DISCORD_BOT_TOKEN_9=your_token_9_here
-BOT_MESSAGING_ADDR=http://0.0.0.0:50052
+DISCORD_BOT_TOKEN_TAH=your_token_here
+DISCORD_BOT_TOKEN_wang=your_token_here
+DISCORD_BOT_TOKEN_mung=your_token_here
+DISCORD_BOT_TOKEN_judge=your_token_here
+DISCORD_BOT_TOKEN_mod=your_token_here
+DISCORD_BOT_TOKEN_welcomebot=your_token_here
+DISCORD_BOT_TOKEN_nutin=your_token_here
+DISCORD_BOT_TOKEN_johan=your_token_here
+DISCORD_BOT_TOKEN_inspector=your_token_here
+BOT_MESSAGING_ADDR=http://localhost:50052
 ```
 
-### `services/gateway-line/.env`
+### `services/web-dashboard/.env`
 ```env
-LINE_TOKEN=your_line_token_here
-LINE_SECRET=your_line_secret_here
-LINE_PORT=8080
-BOT_MESSAGING_ADDR=http://0.0.0.0:50052
+BOT_MESSAGING_ADDR=http://localhost:50052
+WEB_PORT=8081
+ADMIN_PASS=your_secure_password
 ```
 
-> **⚠️ IMPORTANT:** All `.env` files are gitignored. Never commit secrets!
+> ⚠️ **All `.env` files are gitignored. Never commit secrets.**
+
+---
 
 ## 🏗️ Building
 
 ```bash
-# Build entire workspace in release mode
+# Build entire workspace (release mode)
 cargo build --release
 
-# Or build individual services
+# Build individual services
 cargo build --release -p db-manager
 cargo build --release -p ai-core
 cargo build --release -p gateway-discord
-cargo build --release -p gateway-line
+cargo build --release -p web-dashboard
+
+# Fast compilation check (no binary)
+cargo check
 ```
 
-Binaries will be in `target/release/`.
+Binaries are placed in `target/release/`.
 
-## 🚀 Deploying with Screen
+---
 
-The `deploy_to_screen.sh` script automates launching all 4 services in a screen session.
+## 🚀 Deployment
+
+### Local / VPS Deployment with Screen
+
+The included `deploy_to_screen.sh` automates the full deployment:
 
 ```bash
-# First, create a screen session named '27088'
-screen -S 27088
-
-# (Inside screen, detach with Ctrl+A then d)
-
-# Run the deploy script
 chmod +x deploy_to_screen.sh
 ./deploy_to_screen.sh
 ```
 
-This will:
-1. `cargo build --release` (ensure latest binaries)
-2. Create 4 screen windows: `db-manager`, `ai-core`, `gateway-discord`, `gateway-line`
-3. Start each service in order (with 3s delays between them)
+This script:
+1. Runs `cargo build --release` for the entire workspace
+2. Creates (or reuses) a screen session named `27088`
+3. Launches 4 windows in order: `db-manager` → `ai-core` → `gateway-discord` → `web-dashboard`
+4. Waits 2–3 seconds between each service for dependency readiness
 
-### Managing the Screen Session
+### Managing the Session
 
 ```bash
-# Attach to the session
+# Attach
 screen -r 27088
 
 # Inside screen:
-#   Switch windows:  Ctrl+A, then 0-3
-#   Detach:         Ctrl+A, then d
-#   Kill window:     Ctrl+A, then k
+#   Ctrl+A, 0-3    Switch between service windows
+#   Ctrl+A, d      Detach (services keep running)
+#   Ctrl+A, k      Kill current window
 
-# List all windows
+# List windows
 screen -S 27088 -Q windows
 
 # Kill entire session
 screen -S 27088 -X quit
 ```
 
-## 🔌 gRPC Proto Files
+### Service Startup Order
 
-### `proto/bot_messaging.proto`
-Defines communication between **Gateways** and **AI-Core**:
-- `Chat` — Send user message, get AI reply + updated history
-- `Analyze` — Analyze text for rudeness/lewdness scores
-- `SummarizeGossip` — Update user gossip summary
+Services **must** start in this order due to gRPC dependency chains:
 
-### `proto/data_service.proto`
-Defines communication between **AI-Core** and **DB-Manager**:
-- `GetHistory` / `UpdateHistory` / `DeleteHistory`
-- `GetGossip` / `UpdateGossip`
-- `GetUserStat` / `UpdateUserStat`
-- `GetEconomy` / `UpsertEconomy`
-- `GetRpg` / `UpsertRpg`
-- `GetConfig` / `SetConfig`
-- `FindAll`
-
-## 🎮 Bot Characters
-
-| Bot | Personality | Trigger |
-|-----|-------------|---------|
-| **ต๊ะ** (Tah) | Teenager with sharp tongue, rude, disrespectful | Channel-based |
-| **อาวัง** (Wang) | Horny older man, seductive, womanizer | Channel-based |
-| **เจ๊มุ่ง** (Mung) | Horny woman, aggressive, loves men | Channel-based |
-| **เสี่ยหนู** (Nutin) | Rich politician, brags about wealth | Channel-based |
-| **โยฮัน** (Johan) | Dark boss, mysterious, intimidating | Channel-based |
-| **ผู้คุมกฎ** (Judge) | Tracks stats, analyzes messages | All channels |
-| **สารวัตรแจ๊ะ** (Inspector) | Economy/RPG, `/balance`, `/work` | Slash commands |
-
-## 🎊 Welcome Bot — "The Coolest in the World"
-
-When a new member joins, they get a **4-message cinematic experience**:
-1. **The Grand Entrance** — Dramatic intro with member count, banner, timestamp
-2. **The Law & Legends** — Server rules + all bot characters introduction
-3. **The Ultimate Challenge** — 4 sub-quests + slash command guide
-4. **The Final Cinematic** — "Beginning of a Legend" with RNG status
-
-## 📝 Adding a New Bot
-
-1. Add a new handler struct in `services/gateway-discord/src/main.rs`
-2. Add the bot's token to `services/gateway-discord/.env`
-3. Add a `spawn_bot()` call in `main()`
-4. Rebuild: `cargo build --release -p gateway-discord`
-
-## 🔧 Development Tips
-
-```bash
-# Check compilation (fast, no binary)
-cargo check
-
-# Run a single service manually
-cd target/release
-./db-manager
-./ai-core
-./gateway-discord
-./gateway-line
-
-# View logs (if attached to screen)
-# Just look at the screen windows
-
-# Restart a single service
-# Kill its screen window (Ctrl+A, k) and re-run the binary
 ```
-
-## 📊 License
-
-MIT (or your chosen license)
+1. db-manager    (no dependencies)
+2. ai-core       (depends on db-manager)
+3. gateway-discord  (depends on ai-core)
+4. web-dashboard    (depends on ai-core)
+```
 
 ---
 
-**Built with:** Rust 🦀 + gRPC 🔌 + MongoDB 🍃 + Groq AI 🤖 + Serenity (Discord) + Axum (LINE)
+## 🔄 Development Workflow
+
+```bash
+# 1. Start MongoDB
+mongod --dbpath /data/db
+
+# 2. Start db-manager (terminal 1)
+cd services/db-manager && cargo run
+
+# 3. Start ai-core (terminal 2)
+cd services/ai-core && cargo run
+
+# 4. Start gateway-discord (terminal 3)
+cd services/gateway-discord && cargo run
+
+# 5. Start web-dashboard (terminal 4)
+cd services/web-dashboard && cargo run
+
+# 6. View dashboard
+open http://localhost:8081
+open http://localhost:8081/admin?pass=your_password
+
+# 7. Health check
+curl http://localhost:8081/health | jq
+```
+
+### Adding a New AI Bot Character
+
+1. Add a prompt constant in `services/gateway-discord/src/main.rs`
+2. Add a `spawn_bot()` call in `main()` with the handler config
+3. Add the token to `services/gateway-discord/.env`
+4. Rebuild: `cargo build --release -p gateway-discord`
+
+### Adding a New gRPC Method
+
+1. Define the RPC and messages in the appropriate `.proto` file
+2. Rebuild the target service (build.rs runs `tonic-build` automatically)
+3. Implement the trait method in the service's `main.rs`
+4. Update callers if needed
+
+---
+
+## 🏗️ Architecture Decisions
+
+### Why gRPC?
+
+- **Type-safe contracts** — Proto files enforce message schemas at compile time
+- **Zero serialization overhead** — Binary Protobuf vs JSON for internal traffic
+- **Language-agnostic** — Future services can be written in any gRPC-supported language
+- **Streaming-ready** — Tonic supports bidirectional streaming for future real-time features
+
+### Why the Proxy Pattern?
+
+Gateways connect only to `ai-core`, never directly to `db-manager`. The ai-core proxy layer:
+- Translates between `bot_messaging.proto` and `data_service.proto` message types
+- Allows the gateway to use a single gRPC connection for all operations
+- Enables ai-core to inject AI logic (e.g., auto-save chat history after `Chat`)
+
+### Why Separate MongoDB Databases?
+
+Collections are grouped by domain (`tee_bot_db`, `poordev_db`, `tah_economy`, `tah_rpg`, `tah_config`), enabling:
+- Independent backup strategies
+- Per-database access control if needed
+- Clean separation of concerns matching the service boundaries
+
+---
+
+## 📊 Scalability Path
+
+The architecture is designed for horizontal scaling:
+
+```
+                    ┌─── gateway-discord (instance 1)
+                    ├─── gateway-discord (instance 2)
+                    └─── gateway-line
+                           │
+                    ┌──────▼──────┐
+                    │  Load Balancer │  (envoy / nginx with gRPC support)
+                    └──────┬──────┘
+                           │
+              ┌────────────┼────────────┐
+              │            │            │
+        ┌─────▼─────┐ ┌───▼───┐ ┌─────▼─────┐
+        │  ai-core   │ │ai-core│ │  ai-core   │
+        │ (replica 1)│ │ (r 2) │ │ (replica 3)│
+        └─────┬─────┘ └───┬───┘ └─────┬─────┘
+              │            │            │
+              └────────────┼────────────┘
+                           │
+                    ┌──────▼──────┐
+                    │  db-manager  │  (or MongoDB replica set / sharding)
+                    └─────────────┘
+```
+
+- **Stateless gateways** — Can be replicated behind a load balancer
+- **Stateless ai-core** — Horizontally scalable; state lives in MongoDB
+- **MongoDB** — Replica sets for read scaling, sharding for write scaling
+- **Web dashboard** — Stateless; can be replicated behind any HTTP load balancer
+
+---
+
+## 📝 License
+
+MIT
